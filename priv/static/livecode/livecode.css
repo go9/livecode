@@ -1,0 +1,199 @@
+.lc-editor {
+  --lc-bg: #0f172a;
+  --lc-panel: #111827;
+  --lc-fg: #d1d5db;
+  --lc-muted: #94a3b8;
+  --lc-border: #263244;
+  --lc-focus: #93c5fd;
+  --lc-keyword: #93c5fd;
+  --lc-string: #86efac;
+  --lc-number: #fbbf24;
+  --lc-comment: #64748b;
+  --lc-identifier: #e5e7eb;
+  --lc-operator: #cbd5e1;
+  --lc-error: #fca5a5;
+  --lc-radius: 0.65rem;
+  --lc-font-size: 0.9rem;
+  --lc-line-height: 1.45rem;
+  --lc-gutter-width: 3rem;
+  --lc-pad-x: 0.875rem;
+  --lc-pad-y: 0.75rem;
+  --lc-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color: var(--lc-fg);
+  font-family: var(--lc-font);
+}
+
+.lc-shell {
+  display: grid;
+  grid-template-columns: var(--lc-gutter-width) minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius);
+  background: var(--lc-bg);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.lc-editor:focus-within .lc-shell {
+  border-color: color-mix(in srgb, var(--lc-focus), var(--lc-border) 45%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc-focus), transparent 82%);
+}
+
+.lc-gutter {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  min-width: 0;
+  padding: var(--lc-pad-y) 0.625rem var(--lc-pad-y) 0.5rem;
+  border-right: 1px solid var(--lc-border);
+  background: color-mix(in srgb, var(--lc-bg), black 10%);
+  color: var(--lc-muted);
+  font-size: var(--lc-font-size);
+  line-height: var(--lc-line-height);
+  text-align: right;
+  user-select: none;
+}
+
+.lc-input-wrap {
+  position: relative;
+  min-height: 10rem;
+}
+
+.lc-highlight,
+.lc-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: var(--lc-pad-y) var(--lc-pad-x);
+  border: 0;
+  font: inherit;
+  font-size: var(--lc-font-size);
+  line-height: var(--lc-line-height);
+  white-space: pre;
+  tab-size: 2;
+}
+
+.lc-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lc-highlight code {
+  display: block;
+  min-height: 100%;
+}
+
+.lc-textarea {
+  position: relative;
+  z-index: 2;
+  display: block;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--lc-fg);
+  -webkit-text-fill-color: transparent;
+}
+
+.lc-textarea::selection {
+  background: color-mix(in srgb, var(--lc-keyword), transparent 65%);
+  color: transparent;
+}
+
+.lc-token-keyword { color: var(--lc-keyword); }
+.lc-token-string { color: var(--lc-string); }
+.lc-token-number { color: var(--lc-number); }
+.lc-token-comment { color: var(--lc-comment); }
+.lc-token-identifier { color: var(--lc-identifier); }
+.lc-token-operator,
+.lc-token-bracket { color: var(--lc-operator); }
+.lc-token-boolean,
+.lc-token-null { color: #c4b5fd; }
+
+.lc-completions[hidden] {
+  display: none !important;
+}
+
+.lc-completions {
+  position: absolute;
+  z-index: 3;
+  left: var(--lc-pad-x);
+  top: 2.4rem;
+  display: grid;
+  min-width: 16rem;
+  max-width: min(28rem, calc(100% - 1.5rem));
+  max-height: 16rem;
+  overflow: auto;
+  border: 1px solid var(--lc-border);
+  border-radius: calc(var(--lc-radius) - 0.125rem);
+  background: var(--lc-panel);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.28);
+}
+
+.lc-completion[hidden] {
+  display: none !important;
+}
+
+.lc-completion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--lc-border), transparent 35%);
+  background: transparent;
+  color: var(--lc-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lc-completion:hover,
+.lc-completion.lc-active {
+  background: color-mix(in srgb, var(--lc-keyword), transparent 88%);
+}
+
+.lc-completion-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-completion-kind,
+.lc-completion-detail { color: var(--lc-muted); font-size: 0.75rem; }
+.lc-completion-detail { grid-column: 1 / -1; }
+
+.lc-diagnostics[hidden] {
+  display: none !important;
+}
+
+.lc-invalid .lc-shell {
+  border-color: var(--lc-error);
+}
+
+.lc-diagnostics {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
+.lc-diagnostic {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  color: var(--lc-muted);
+  font-family: system-ui, sans-serif;
+  font-size: 0.875rem;
+}
+
+.lc-diagnostic-error { color: var(--lc-error); }
+.lc-diagnostic-severity { font-weight: 700; text-transform: uppercase; }
+
+.lc-caret-mirror {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  visibility: hidden;
+  overflow-wrap: normal;
+  white-space: pre-wrap;
+}
