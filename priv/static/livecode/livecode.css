@@ -112,6 +112,8 @@
 .lc-token-bracket { color: var(--lc-operator); }
 .lc-token-boolean,
 .lc-token-null { color: #c4b5fd; }
+.lc-token-tag { color: var(--lc-keyword); }
+.lc-token-attribute { color: var(--lc-number); }
 
 .lc-completions[hidden] {
   display: none !important;

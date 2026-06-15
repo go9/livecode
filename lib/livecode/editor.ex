@@ -93,5 +93,6 @@ defmodule LiveCode.Editor do
 
   defp language_name(LiveCode.Languages.SQL), do: "sql"
   defp language_name(LiveCode.Languages.JSON), do: "json"
+  defp language_name(LiveCode.Languages.HTML), do: "html"
   defp language_name(language), do: language |> Module.split() |> List.last() |> String.downcase()
 end

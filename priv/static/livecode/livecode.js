@@ -55,6 +55,37 @@ export const LiveCode = {
       })
     }
 
+    this.highlightHtml = (text) => {
+      const segRe = /<!--[\s\S]*?-->|<[^>]*>/g
+      const tagRe = /<\/?|\/?>|"[^"]*"|'[^']*'|[A-Za-z_:][\w.:-]*|=|\s+|./g
+      let html = ""
+      let last = 0
+      for (const match of text.matchAll(segRe)) {
+        if (match.index > last) html += this.tokenSpan("text", text.slice(last, match.index))
+        const segment = match[0]
+        if (segment.startsWith("<!--")) {
+          html += this.tokenSpan("comment", segment)
+        } else {
+          let expectName = true
+          for (const tag of segment.matchAll(tagRe)) {
+            const part = tag[0]
+            if (part === "<" || part === "</") { expectName = true; html += this.tokenSpan("bracket", part) }
+            else if (part === ">" || part === "/>") { html += this.tokenSpan("bracket", part) }
+            else if (part.startsWith('"') || part.startsWith("'")) { html += this.tokenSpan("string", part) }
+            else if (part === "=") { html += this.tokenSpan("operator", part) }
+            else if (/^[A-Za-z_:][\w.:-]*$/.test(part)) {
+              if (expectName) { expectName = false; html += this.tokenSpan("tag", part) }
+              else { html += this.tokenSpan("attribute", part) }
+            }
+            else { html += this.escape(part) }
+          }
+        }
+        last = match.index + segment.length
+      }
+      if (last < text.length) html += this.tokenSpan("text", text.slice(last))
+      return html || "\n"
+    }
+
     this.renderDiagnostics = () => {
       if (!this.diagnostics || this.language !== "json") return
       const value = this.textarea.value.trim()
@@ -78,7 +109,12 @@ export const LiveCode = {
     this.renderHighlight = () => {
       if (!this.highlightCode) return
       const value = this.textarea.value
-      this.highlightCode.innerHTML = this.language === "json" ? this.highlightJson(value) : this.highlightSql(value)
+      this.highlightCode.innerHTML =
+        this.language === "json"
+          ? this.highlightJson(value)
+          : this.language === "html"
+            ? this.highlightHtml(value)
+            : this.highlightSql(value)
       this.renderDiagnostics()
     }
 
