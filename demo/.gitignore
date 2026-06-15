@@ -35,3 +35,6 @@ demo-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# flicker app manifest carries SECRET_KEY_BASE in [app.env] — keep out of git
+/flicker.toml
