@@ -1,121 +1,166 @@
+// LiveCode editor hook.
+//
+// A language is a PAIR: an Elixir `LiveCode.Language` module (server meaning —
+// tokens/completions/diagnostics/snippets/format/preview-config) and an optional
+// CLIENT registration here (rendering — highlight + preview). Register one with:
+//
+//   import { registerLanguage } from ".../livecode.js"
+//   registerLanguage("mylang", {
+//     highlight(text) { return htmlString },                 // optional
+//     preview(text, ctx) { return { srcdoc: "<...>" } },     // optional
+//     diagnostics(text) { return [{ severity, message }] },  // optional
+//   })
+//
+// Consumers can also register a named PREVIEW TRANSFORM applied to the source
+// before the language renders it (resolve placeholders, sanitize, etc.):
+//
+//   import { registerTransform } from ".../livecode.js"
+//   registerTransform("ebay", (text, ctx) => sanitize(resolvePlaceholders(text)))
+//
+// and reference it from the editor component with `transform="ebay"`.
+
+const registry = {}
+const transforms = {}
+
+export function registerLanguage(name, def) {
+  registry[name] = { ...(registry[name] || {}), ...def }
+}
+
+export function registerTransform(name, fn) {
+  transforms[name] = fn
+}
+
+const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+const tokenSpan = (kind, text) => `<span class="lc-token lc-token-${kind}">${escape(text)}</span>`
+
+function highlightGeneric(text, re, classify) {
+  let html = ""
+  let last = 0
+  for (const match of text.matchAll(re)) {
+    if (match.index > last) html += escape(text.slice(last, match.index))
+    html += tokenSpan(classify(match[0]), match[0])
+    last = match.index + match[0].length
+  }
+  html += escape(text.slice(last))
+  return html
+}
+
+function highlightSql(text) {
+  const keywords = new Set("alter analyze and as asc begin by case cast check column commit constraint create delete desc distinct drop else end except explain false foreign from full group having in index inner insert intersect into is join key left limit not null on or order outer primary references returning right rollback select set table then true union unique update values view where with".split(" "))
+  const re = /(--.*$|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:""|[^"])*"|\b\d+(?:\.\d+)?\b|[A-Za-z_][A-Za-z0-9_$]*|<=|>=|<>|!=|\|\||::|[+\-*\/=<>.,;()])/gm
+  return highlightGeneric(text, re, (part) => {
+    const lower = part.toLowerCase()
+    if (part.startsWith("--") || part.startsWith("/*")) return "comment"
+    if (part.startsWith("'")) return "string"
+    if (part.startsWith('"')) return "identifier"
+    if (/^\d/.test(part)) return "number"
+    if (keywords.has(lower)) return "keyword"
+    if (/^[+\-*\/=<>.,;()|:!]+$/.test(part)) return "operator"
+    return "identifier"
+  })
+}
+
+function highlightJson(text) {
+  const re = /("(?:\\.|[^"])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\]:,])/gm
+  return highlightGeneric(text, re, (part) => {
+    if (part.startsWith('"')) return "string"
+    if (part === "true" || part === "false") return "boolean"
+    if (part === "null") return "null"
+    if (/^-?\d/.test(part)) return "number"
+    if (/^[{}\[\]]$/.test(part)) return "bracket"
+    if (/^[:,]$/.test(part)) return "operator"
+    return "text"
+  })
+}
+
+function highlightHtml(text) {
+  const segRe = /<!--[\s\S]*?-->|<[^>]*>/g
+  const tagRe = /<\/?|\/?>|"[^"]*"|'[^']*'|[A-Za-z_:][\w.:-]*|=|\s+|./g
+  let html = ""
+  let last = 0
+  for (const match of text.matchAll(segRe)) {
+    if (match.index > last) html += tokenSpan("text", text.slice(last, match.index))
+    const segment = match[0]
+    if (segment.startsWith("<!--")) {
+      html += tokenSpan("comment", segment)
+    } else {
+      let expectName = true
+      for (const tag of segment.matchAll(tagRe)) {
+        const part = tag[0]
+        if (part === "<" || part === "</") { expectName = true; html += tokenSpan("bracket", part) }
+        else if (part === ">" || part === "/>") { html += tokenSpan("bracket", part) }
+        else if (part.startsWith('"') || part.startsWith("'")) { html += tokenSpan("string", part) }
+        else if (part === "=") { html += tokenSpan("operator", part) }
+        else if (/^[A-Za-z_:][\w.:-]*$/.test(part)) {
+          if (expectName) { expectName = false; html += tokenSpan("tag", part) }
+          else { html += tokenSpan("attribute", part) }
+        }
+        else { html += escape(part) }
+      }
+    }
+    last = match.index + segment.length
+  }
+  if (last < text.length) html += tokenSpan("text", text.slice(last))
+  return html
+}
+
+function jsonDiagnostics(text) {
+  const value = text.trim()
+  if (!value) return []
+  try {
+    JSON.parse(value)
+    return []
+  } catch (error) {
+    return [{ severity: "error", message: error.message }]
+  }
+}
+
+// Built-in languages. HTML is previewable (renders into a sandboxed iframe).
+registerLanguage("sql", { highlight: highlightSql })
+registerLanguage("json", { highlight: highlightJson, diagnostics: jsonDiagnostics })
+registerLanguage("html", { highlight: highlightHtml, preview: (text) => ({ srcdoc: text }) })
+
+const PREVIEW_DEBOUNCE_MS = 120
+
 export const LiveCode = {
   mounted() {
-    this.textarea = this.el.querySelector("[data-livecode-textarea]")
-    this.highlight = this.el.querySelector(".lc-highlight")
-    this.highlightCode = this.el.querySelector("[data-livecode-highlight]")
-    this.completions = this.el.querySelector("[data-livecode-completions]")
-    this.diagnostics = this.el.querySelector("[data-livecode-diagnostics]")
-    this.language = this.el.dataset.livecodeLanguage || "text"
-    this.activeCompletion = 0
-
+    this.resolveRefs()
     if (!this.textarea) return
+    this.activeCompletion = 0
+    this.previewTimer = null
 
     this.items = () => Array.from(this.completions?.querySelectorAll("[data-livecode-insert]") || [])
     this.visibleItems = () => this.items().filter((item) => !item.hidden)
-    this.escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    this.tokenSpan = (kind, text) => `<span class="lc-token lc-token-${kind}">${this.escape(text)}</span>`
-
-    this.highlightGeneric = (text, re, classify) => {
-      let html = ""
-      let last = 0
-      for (const match of text.matchAll(re)) {
-        if (match.index > last) html += this.escape(text.slice(last, match.index))
-        html += this.tokenSpan(classify(match[0]), match[0])
-        last = match.index + match[0].length
-      }
-      html += this.escape(text.slice(last))
-      return html || "\n"
-    }
-
-    this.highlightSql = (text) => {
-      const keywords = new Set("alter analyze and as asc begin by case cast check column commit constraint create delete desc distinct drop else end except explain false foreign from full group having in index inner insert intersect into is join key left limit not null on or order outer primary references returning right rollback select set table then true union unique update values view where with".split(" "))
-      const re = /(--.*$|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:""|[^"])*"|\b\d+(?:\.\d+)?\b|[A-Za-z_][A-Za-z0-9_$]*|<=|>=|<>|!=|\|\||::|[+\-*\/=<>.,;()])/gm
-      return this.highlightGeneric(text, re, (part) => {
-        const lower = part.toLowerCase()
-        if (part.startsWith("--") || part.startsWith("/*")) return "comment"
-        if (part.startsWith("'")) return "string"
-        if (part.startsWith('"')) return "identifier"
-        if (/^\d/.test(part)) return "number"
-        if (keywords.has(lower)) return "keyword"
-        if (/^[+\-*\/=<>.,;()|:!]+$/.test(part)) return "operator"
-        return "identifier"
-      })
-    }
-
-    this.highlightJson = (text) => {
-      const re = /("(?:\\.|[^"])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\]:,])/gm
-      return this.highlightGeneric(text, re, (part) => {
-        if (part.startsWith('"')) return "string"
-        if (part === "true" || part === "false") return "boolean"
-        if (part === "null") return "null"
-        if (/^-?\d/.test(part)) return "number"
-        if (/^[{}\[\]]$/.test(part)) return "bracket"
-        if (/^[:,]$/.test(part)) return "operator"
-        return "text"
-      })
-    }
-
-    this.highlightHtml = (text) => {
-      const segRe = /<!--[\s\S]*?-->|<[^>]*>/g
-      const tagRe = /<\/?|\/?>|"[^"]*"|'[^']*'|[A-Za-z_:][\w.:-]*|=|\s+|./g
-      let html = ""
-      let last = 0
-      for (const match of text.matchAll(segRe)) {
-        if (match.index > last) html += this.tokenSpan("text", text.slice(last, match.index))
-        const segment = match[0]
-        if (segment.startsWith("<!--")) {
-          html += this.tokenSpan("comment", segment)
-        } else {
-          let expectName = true
-          for (const tag of segment.matchAll(tagRe)) {
-            const part = tag[0]
-            if (part === "<" || part === "</") { expectName = true; html += this.tokenSpan("bracket", part) }
-            else if (part === ">" || part === "/>") { html += this.tokenSpan("bracket", part) }
-            else if (part.startsWith('"') || part.startsWith("'")) { html += this.tokenSpan("string", part) }
-            else if (part === "=") { html += this.tokenSpan("operator", part) }
-            else if (/^[A-Za-z_:][\w.:-]*$/.test(part)) {
-              if (expectName) { expectName = false; html += this.tokenSpan("tag", part) }
-              else { html += this.tokenSpan("attribute", part) }
-            }
-            else { html += this.escape(part) }
-          }
-        }
-        last = match.index + segment.length
-      }
-      if (last < text.length) html += this.tokenSpan("text", text.slice(last))
-      return html || "\n"
-    }
-
-    this.renderDiagnostics = () => {
-      if (!this.diagnostics || this.language !== "json") return
-      const value = this.textarea.value.trim()
-      if (!value) {
-        this.diagnostics.hidden = true
-        this.el.classList.remove("lc-invalid")
-        return
-      }
-
-      try {
-        JSON.parse(value)
-        this.diagnostics.hidden = true
-        this.el.classList.remove("lc-invalid")
-      } catch (error) {
-        this.diagnostics.innerHTML = `<div class="lc-diagnostic lc-diagnostic-error"><span class="lc-diagnostic-severity">error</span><span>${this.escape(error.message)}</span></div>`
-        this.diagnostics.hidden = false
-        this.el.classList.add("lc-invalid")
-      }
-    }
 
     this.renderHighlight = () => {
       if (!this.highlightCode) return
       const value = this.textarea.value
-      this.highlightCode.innerHTML =
-        this.language === "json"
-          ? this.highlightJson(value)
-          : this.language === "html"
-            ? this.highlightHtml(value)
-            : this.highlightSql(value)
+      const highlighter = this.lang.highlight || ((text) => escape(text))
+      let html = highlighter(value)
+      // A textarea reserves a blank line for a trailing newline; a <pre>
+      // collapses it. Add one back so the overlay's last line (and the caret on
+      // it) stays aligned with the textarea.
+      if (value === "" || value.endsWith("\n")) html += "\n"
+      this.highlightCode.innerHTML = html
       this.renderDiagnostics()
+    }
+
+    this.renderDiagnostics = () => {
+      if (!this.diagnostics) return
+      const items = this.lang.diagnostics ? this.lang.diagnostics(this.textarea.value) : []
+      if (!items.length) {
+        this.diagnostics.hidden = true
+        this.el.classList.remove("lc-invalid")
+        return
+      }
+      this.diagnostics.innerHTML = items
+        .map(
+          (d) =>
+            `<div class="lc-diagnostic lc-diagnostic-${d.severity}"><span class="lc-diagnostic-severity">${d.severity}</span><span>${escape(d.message)}</span></div>`
+        )
+        .join("")
+      this.diagnostics.hidden = false
+      this.el.classList.toggle("lc-invalid", items.some((d) => d.severity === "error"))
     }
 
     this.currentPrefix = () => {
@@ -126,9 +171,12 @@ export const LiveCode = {
     }
 
     this.syncScroll = () => {
-      if (!this.highlight) return
-      this.highlight.scrollTop = this.textarea.scrollTop
-      this.highlight.scrollLeft = this.textarea.scrollLeft
+      if (this.highlight) {
+        this.highlight.scrollTop = this.textarea.scrollTop
+        this.highlight.scrollLeft = this.textarea.scrollLeft
+      }
+      // Keep the line-number gutter locked to the code's vertical scroll.
+      if (this.gutter) this.gutter.scrollTop = this.textarea.scrollTop
     }
 
     this.caretPoint = () => {
@@ -145,19 +193,17 @@ export const LiveCode = {
         "boxSizing", "width", "height", "overflowX", "overflowY", "borderTopWidth",
         "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "paddingTop", "paddingRight",
         "paddingBottom", "paddingLeft", "fontFamily", "fontSize", "fontWeight", "fontStyle",
-        "letterSpacing", "textTransform", "wordSpacing", "lineHeight", "tabSize"
+        "letterSpacing", "textTransform", "wordSpacing", "lineHeight", "tabSize", "whiteSpace"
       ]
       copy.forEach((name) => { mirror.style[name] = style[name] })
       mirror.style.position = "fixed"
       mirror.style.left = `${this.textarea.getBoundingClientRect().left}px`
       mirror.style.top = `${this.textarea.getBoundingClientRect().top}px`
-      mirror.style.whiteSpace = "pre-wrap"
-      mirror.style.overflowWrap = "break-word"
       mirror.style.visibility = "hidden"
       mirror.style.pointerEvents = "none"
       mirror.style.zIndex = "-1"
 
-      mirror.innerHTML = `${this.escape(before)}<span data-lc-caret></span>${this.escape(after)}`
+      mirror.innerHTML = `${escape(before)}<span data-lc-caret></span>${escape(after)}`
       if (!mirror.parentNode) document.body.appendChild(mirror)
 
       const marker = mirror.querySelector("[data-lc-caret]")
@@ -242,6 +288,55 @@ export const LiveCode = {
       return true
     }
 
+    // ── Preview + view modes ────────────────────────────────────────────
+    this.ensureFrame = () => {
+      if (this._frame || !this.previewPane) return this._frame
+      const frame = document.createElement("iframe")
+      frame.className = "lc-preview-frame"
+      frame.setAttribute("title", "Preview")
+      // Empty sandbox token = maximum isolation (no script execution, no
+      // same-origin). The editor never needs the preview to run scripts.
+      if (this.sandbox) frame.setAttribute("sandbox", "")
+      this.previewPane.appendChild(frame)
+      this._frame = frame
+      return frame
+    }
+
+    this.renderPreview = () => {
+      if (!this.previewMode || !this.previewPane || this.view === "code") return
+      let text = this.textarea.value
+      const transform = transforms[this.transformName]
+      if (transform) {
+        try {
+          text = transform(text, { el: this.el, language: this.language })
+        } catch (error) {
+          text = `<pre style="color:#b91c1c">preview transform error: ${escape(String(error))}</pre>`
+        }
+      }
+      const renderer = this.lang.preview
+      const result = renderer ? renderer(text, { el: this.el, language: this.language }) : { srcdoc: text }
+      const frame = this.ensureFrame()
+      if (frame) frame.srcdoc = result.srcdoc != null ? result.srcdoc : result.html != null ? result.html : text
+    }
+
+    this.schedulePreview = () => {
+      if (!this.previewMode || this.view === "code") return
+      clearTimeout(this.previewTimer)
+      this.previewTimer = setTimeout(() => this.renderPreview(), PREVIEW_DEBOUNCE_MS)
+    }
+
+    this.setView = (view) => {
+      this.view = view
+      this.el.classList.remove("lc-view-code", "lc-view-split", "lc-view-preview")
+      this.el.classList.add(`lc-view-${view}`)
+      this.el.dataset.livecodeView = view
+      this.toolbar?.querySelectorAll("[data-livecode-view-btn]").forEach((btn) =>
+        btn.classList.toggle("lc-tab-active", btn.dataset.livecodeViewBtn === view)
+      )
+      if (view !== "code") this.renderPreview()
+    }
+
+    // ── Listeners ───────────────────────────────────────────────────────
     this.textarea.addEventListener("scroll", () => {
       this.syncScroll()
       if (!this.completions?.hidden) this.positionCompletions()
@@ -250,6 +345,7 @@ export const LiveCode = {
     this.textarea.addEventListener("input", (event) => {
       this.renderHighlight()
       this.syncScroll()
+      this.schedulePreview()
 
       if (!this.completions?.hidden) this.positionCompletions()
       if (event.isTrusted && this.currentPrefix().length >= 2) this.showCompletions(false)
@@ -296,20 +392,39 @@ export const LiveCode = {
       this.replacePrefix(item.dataset.livecodeInsert || item.textContent.trim())
     })
 
+    this.toolbar?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-livecode-view-btn]")
+      if (btn) this.setView(btn.dataset.livecodeViewBtn)
+    })
+
     this.renderHighlight()
     this.syncScroll()
     this.hideCompletions()
+    if (this.previewMode) this.setView(this.view || "code")
   },
 
-  updated() {
+  resolveRefs() {
     this.textarea = this.el.querySelector("[data-livecode-textarea]")
     this.highlight = this.el.querySelector(".lc-highlight")
     this.highlightCode = this.el.querySelector("[data-livecode-highlight]")
+    this.gutter = this.el.querySelector("[data-livecode-gutter]")
     this.completions = this.el.querySelector("[data-livecode-completions]")
     this.diagnostics = this.el.querySelector("[data-livecode-diagnostics]")
+    this.toolbar = this.el.querySelector("[data-livecode-toolbar]")
+    this.previewPane = this.el.querySelector("[data-livecode-preview-pane]")
     this.language = this.el.dataset.livecodeLanguage || "text"
+    this.lang = registry[this.language] || {}
+    this.previewMode = this.el.dataset.livecodePreview || null
+    this.sandbox = this.el.dataset.livecodeSandbox !== "false"
+    this.transformName = this.el.dataset.livecodeTransform || null
+    this.view = this.el.dataset.livecodeView || (this.previewMode ? "code" : null)
+  },
+
+  updated() {
+    this.resolveRefs()
     this.renderHighlight?.()
     this.syncScroll?.()
+    this.schedulePreview?.()
 
     if (this.currentPrefix && document.activeElement === this.textarea && this.currentPrefix().length >= 2) {
       this.showCompletions?.(false)

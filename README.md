@@ -76,10 +76,69 @@ defmodule MyApp.CELLanguage do
 end
 ```
 
+## Live preview & view modes
+
+A language can opt into a **live preview**. When it does, the editor shows a
+`Code` / `Preview` / `Split` toggle and renders the source — debounced, as you
+type — into a **sandboxed `<iframe>`** (no script execution, isolated styles).
+
+Opt in from the Elixir language module with `preview/1`:
+
+```elixir
+@impl true
+def preview(_opts), do: %LiveCode.Preview{mode: :html, sandbox: true, label: "Preview"}
+```
+
+and register the matching client renderer in JS (see below). Languages that
+don't implement `preview/1` render code-only exactly as before.
+
+Control the initial view (and turn it off) per editor:
+
+```elixir
+<.editor id="html" language={LiveCode.Languages.HTML} value={@html} preview={:split} />
+<.editor id="plain" language={LiveCode.Languages.HTML} value={@html} preview={:off} />
+```
+
+### Consumer preview transforms
+
+Pre-process the source before it's rendered (resolve placeholders, sanitize,
+inject sample data…) by registering a named transform and referencing it:
+
+```javascript
+import { registerTransform } from "../vendor/livecode/livecode"
+
+registerTransform("ebay", (text, ctx) => sanitize(resolvePlaceholders(text)))
+```
+
+```elixir
+<.editor id="ebay" language={LiveCode.Languages.HTML} value={@template} transform="ebay" />
+```
+
+## Client-side language rendering (highlight + preview)
+
+A language is a **pair**: an Elixir `LiveCode.Language` module (meaning) and an
+optional JS registration (rendering). Highlighting and preview are resolved from
+a client registry, so a new language ships its own renderers without patching
+the hook:
+
+```javascript
+import { registerLanguage } from "../vendor/livecode/livecode"
+
+registerLanguage("mylang", {
+  highlight(text) { return htmlString },               // optional
+  preview(text, ctx) { return { srcdoc: "<...>" } },   // optional
+  diagnostics(text) { return [{ severity, message }] }  // optional
+})
+```
+
+Built-in `sql`, `json`, and `html` renderers are registered automatically
+(`html` is previewable).
+
 ## First-party languages
 
 - `LiveCode.Languages.SQL`
 - `LiveCode.Languages.JSON`
+- `LiveCode.Languages.HTML` (previewable)
 
 ## Status
 

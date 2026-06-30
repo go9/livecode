@@ -43,6 +43,10 @@
   align-content: start;
   gap: 0;
   min-width: 0;
+  /* Own clip context so the hook can scroll it in lock-step with the textarea
+     (set gutter.scrollTop = textarea.scrollTop) — same mechanism the highlight
+     overlay uses. Without this the line numbers stay put while the code scrolls. */
+  overflow: hidden;
   padding: var(--lc-pad-y) 0.625rem var(--lc-pad-y) 0.5rem;
   border-right: 1px solid var(--lc-border);
   background: color-mix(in srgb, var(--lc-bg), black 10%);
@@ -197,5 +201,81 @@
   top: 0;
   visibility: hidden;
   overflow-wrap: normal;
-  white-space: pre-wrap;
+  /* Match the textarea's wrapping (it is `white-space: pre`, no wrap) so the
+     measured caret column lines up with the real caret. */
+  white-space: pre;
 }
+
+/* ── View modes: Code / Preview / Split ───────────────────────────────── */
+
+.lc-toolbar {
+  display: inline-flex;
+  gap: 2px;
+  width: max-content;
+  margin-bottom: 0.5rem;
+  padding: 2px;
+  border: 1px solid var(--lc-border);
+  border-radius: calc(var(--lc-radius) - 0.2rem);
+  background: color-mix(in srgb, var(--lc-bg), black 10%);
+}
+
+.lc-tab {
+  appearance: none;
+  border: 0;
+  border-radius: calc(var(--lc-radius) - 0.32rem);
+  background: transparent;
+  color: var(--lc-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+
+.lc-tab:hover {
+  color: var(--lc-fg);
+}
+
+.lc-tab-active {
+  background: var(--lc-panel);
+  color: var(--lc-fg);
+}
+
+.lc-body {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.lc-shell {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.lc-preview {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 10rem;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius);
+  background: #ffffff;
+}
+
+.lc-preview-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+/* Code-only view: hide the preview pane, code fills the row. */
+.lc-view-code .lc-preview {
+  display: none;
+}
+
+/* Preview-only view: hide the editor, preview fills the row. */
+.lc-view-preview .lc-shell {
+  display: none;
+}
+/* Split view keeps both panes (default flex layout). */

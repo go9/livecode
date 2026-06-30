@@ -93,6 +93,11 @@ defmodule LiveCode.Languages.HTML do
   @impl true
   def format(_text, _opts \\ []), do: :noop
 
+  @impl true
+  def preview(_opts \\ []) do
+    %LiveCode.Preview{mode: :html, sandbox: true, label: "Preview", default_view: :code}
+  end
+
   defp tokenize_segment(<<"<!--", _rest::binary>> = segment),
     do: [%Token{kind: :comment, text: segment}]
 
