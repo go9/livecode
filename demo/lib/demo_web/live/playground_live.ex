@@ -14,16 +14,18 @@ defmodule DemoWeb.PlaygroundLive do
 
   @samples %{
     "html" => """
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Hello, world</title>
-      </head>
-      <body>
-        <h1 style="color:#534AB7">Hello, world!</h1>
-        <p>Edit me — <strong>livecode</strong> highlights HTML as you type.</p>
-      </body>
-    </html>
+    <div style="font-family:system-ui,sans-serif;max-width:420px;margin:24px auto;
+                border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
+      <div style="background:#534AB7;color:#fff;padding:20px 24px;">
+        <h1 style="margin:0;font-size:22px;">livecode</h1>
+        <p style="margin:6px 0 0;opacity:.85;font-size:14px;">Edit the HTML — the preview updates live.</p>
+      </div>
+      <div style="padding:20px 24px;color:#334155;">
+        <p style="margin:0 0 12px;">Try <strong>Split</strong> to see code + preview side by side.</p>
+        <a href="#" style="display:inline-block;background:#534AB7;color:#fff;
+           text-decoration:none;padding:9px 16px;border-radius:8px;font-size:14px;">A button</a>
+      </div>
+    </div>
     """,
     "sql" => """
     -- Edit this query — keywords, strings and numbers highlight live.
@@ -95,12 +97,20 @@ defmodule DemoWeb.PlaygroundLive do
           id={"editor-" <> @current}
           language={language_mod(@current)}
           value={Map.fetch!(@samples, @current)}
+          preview={:split}
           rows={18}
         />
 
         <p class="text-xs text-zinc-500 mt-3">
-          Type to highlight. Press <kbd class="px-1 border rounded">Ctrl</kbd>/<kbd class="px-1 border rounded">⌘</kbd>
-          + <kbd class="px-1 border rounded">Space</kbd> for completions.
+          Type to highlight. Press <kbd class="px-1 border rounded">Ctrl</kbd>/<kbd class="px-1 border rounded">⌘</kbd> +
+          <kbd class="px-1 border rounded">Space</kbd>
+          for completions.
+          <span class="block mt-1">
+            HTML is <strong>previewable</strong>
+            — toggle <strong>Code / Preview / Split</strong>
+            above the editor
+            (SQL and JSON stay code-only). Preview and highlighting are per-language extensions.
+          </span>
         </p>
       </div>
     </div>
