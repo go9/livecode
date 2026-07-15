@@ -29,9 +29,38 @@ defmodule LiveCode.Editor do
       "Name of a client preview transform registered via `LiveCode.registerTransform/2` (applied to the source before the language renders it — e.g. resolve placeholders + sanitize)."
   )
 
+  attr(:readonly, :boolean,
+    default: false,
+    doc:
+      "Render a static, syntax-highlighted, non-editable block (no textarea, hook, completions, or diagnostics) — for showing code."
+  )
+
   attr(:rest, :global)
 
   @doc "Render a textarea-backed LiveCode editor."
+  def editor(%{readonly: true} = assigns) do
+    assigns =
+      assigns
+      |> assign(:tokens, Language.tokenize(assigns.language, assigns.value, assigns.opts))
+      |> assign(:line_numbers, line_numbers(assigns.value))
+
+    ~H"""
+    <div
+      id={@id}
+      class={["lc-editor", "lc-readonly", @class]}
+      data-livecode-language={language_name(@language)}
+      {@rest}
+    >
+      <div class="lc-body">
+        <div class="lc-shell">
+          <div class="lc-gutter" aria-hidden="true"><span :for={line <- @line_numbers}>{line}</span></div>
+          <pre class="lc-highlight lc-highlight-static"><code><span :for={token <- @tokens} class={token_class(token.kind)}>{token.text}</span></code></pre>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
   def editor(assigns) do
     language_context = %Context{text: assigns.value, metadata: assigns.context}
     preview = Language.preview(assigns.language, assigns.opts)
@@ -134,5 +163,6 @@ defmodule LiveCode.Editor do
   defp language_name(LiveCode.Languages.SQL), do: "sql"
   defp language_name(LiveCode.Languages.JSON), do: "json"
   defp language_name(LiveCode.Languages.HTML), do: "html"
+  defp language_name(LiveCode.Languages.HEEx), do: "heex"
   defp language_name(language), do: language |> Module.split() |> List.last() |> String.downcase()
 end
