@@ -279,3 +279,21 @@
   display: none;
 }
 /* Split view keeps both panes (default flex layout). */
+
+/* ── Read-only / static highlighted block ── */
+.lc-readonly { position: relative; }
+.lc-readonly .lc-highlight-static {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  overflow-x: auto;
+  pointer-events: auto;
+  min-height: 0;
+}
+.lc-readonly .lc-shell { position: relative; }
+
+/* HEEx token kinds (in addition to the shared tag/attribute/string/comment). */
+.lc-token-interpolation { color: var(--lc-identifier); }
+.lc-token-eex { color: var(--lc-identifier); }
+.lc-token-directive { color: var(--lc-keyword); font-style: italic; }
+.lc-token-atom { color: #c4b5fd; }
