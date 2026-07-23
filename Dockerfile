@@ -4,7 +4,8 @@
 # builds the Phoenix demo from the /demo subdirectory while keeping the rest of
 # the repository layout intact.
 #
-# Based on demo/Dockerfile.
+# The demo uses the package from this checkout, so the image includes the
+# LiveCode source before resolving the demo's path dependency.
 
 ARG ELIXIR_VERSION=1.18.4
 ARG OTP_VERSION=28.0.2
@@ -19,13 +20,18 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends build-essential git \
   && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app/demo
+WORKDIR /app
 
 RUN mix local.hex --force \
   && mix local.rebar --force
 
 ENV MIX_ENV="prod"
 
+COPY mix.exs ./
+COPY lib lib
+COPY priv priv
+
+WORKDIR /app/demo
 COPY demo/mix.exs demo/mix.lock ./
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config

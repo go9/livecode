@@ -115,6 +115,12 @@ function jsonDiagnostics(text) {
   }
 }
 
+function renderLineNumbers(gutter, text) {
+  const count = text.split("\n").length
+  if (!gutter || gutter.childElementCount === count) return
+  gutter.innerHTML = Array.from({ length: count }, (_, index) => `<span>${index + 1}</span>`).join("")
+}
+
 // Built-in languages. HTML is previewable (renders into a sandboxed iframe).
 registerLanguage("sql", { highlight: highlightSql })
 registerLanguage("json", { highlight: highlightJson, diagnostics: jsonDiagnostics })
@@ -128,6 +134,13 @@ export const LiveCode = {
     if (!this.textarea) return
     this.activeCompletion = 0
     this.previewTimer = null
+    const persistentDiagnostics = Array.from(
+      this.diagnostics?.querySelectorAll("[data-livecode-persistent-diagnostic]") || []
+    )
+    this.persistentDiagnostics = persistentDiagnostics.map((item) => item.outerHTML).join("")
+    this.persistentDiagnosticError = persistentDiagnostics.some((item) =>
+      item.classList.contains("lc-diagnostic-error")
+    )
 
     this.items = () => Array.from(this.completions?.querySelectorAll("[data-livecode-insert]") || [])
     this.visibleItems = () => this.items().filter((item) => !item.hidden)
@@ -142,25 +155,27 @@ export const LiveCode = {
       // it) stays aligned with the textarea.
       if (value === "" || value.endsWith("\n")) html += "\n"
       this.highlightCode.innerHTML = html
+
+      renderLineNumbers(this.gutter, value)
       this.renderDiagnostics()
     }
 
     this.renderDiagnostics = () => {
-      if (!this.diagnostics) return
-      const items = this.lang.diagnostics ? this.lang.diagnostics(this.textarea.value) : []
-      if (!items.length) {
-        this.diagnostics.hidden = true
-        this.el.classList.remove("lc-invalid")
-        return
-      }
-      this.diagnostics.innerHTML = items
+      if (!this.diagnostics || !this.lang.diagnostics) return
+      const items = this.lang.diagnostics(this.textarea.value)
+      const clientDiagnostics = items
         .map(
           (d) =>
             `<div class="lc-diagnostic lc-diagnostic-${d.severity}"><span class="lc-diagnostic-severity">${d.severity}</span><span>${escape(d.message)}</span></div>`
         )
         .join("")
-      this.diagnostics.hidden = false
-      this.el.classList.toggle("lc-invalid", items.some((d) => d.severity === "error"))
+      this.diagnostics.innerHTML = this.persistentDiagnostics + clientDiagnostics
+      this.diagnostics.hidden = !this.diagnostics.innerHTML
+      const invalid = this.persistentDiagnosticError || items.some((d) => d.severity === "error")
+      this.el.classList.toggle("lc-invalid", invalid)
+      this.textarea.setAttribute("aria-invalid", String(invalid))
+      if (this.diagnostics.hidden) this.textarea.removeAttribute("aria-describedby")
+      else this.textarea.setAttribute("aria-describedby", this.diagnostics.id)
     }
 
     this.currentPrefix = () => {
@@ -275,7 +290,6 @@ export const LiveCode = {
       this.textarea.value = value.slice(0, start) + text + value.slice(end)
       const next = start + text.length
       this.textarea.setSelectionRange(next, next)
-      this.renderHighlight()
       this.textarea.dispatchEvent(new Event("input", { bubbles: true }))
       this.textarea.focus()
       this.hideCompletions()
@@ -313,7 +327,7 @@ export const LiveCode = {
           text = `<pre style="color:#b91c1c">preview transform error: ${escape(String(error))}</pre>`
         }
       }
-      const renderer = this.lang.preview
+      const renderer = registry[this.previewMode]?.preview || this.lang.preview
       const result = renderer ? renderer(text, { el: this.el, language: this.language }) : { srcdoc: text }
       const frame = this.ensureFrame()
       if (frame) frame.srcdoc = result.srcdoc != null ? result.srcdoc : result.html != null ? result.html : text
@@ -330,9 +344,11 @@ export const LiveCode = {
       this.el.classList.remove("lc-view-code", "lc-view-split", "lc-view-preview")
       this.el.classList.add(`lc-view-${view}`)
       this.el.dataset.livecodeView = view
-      this.toolbar?.querySelectorAll("[data-livecode-view-btn]").forEach((btn) =>
-        btn.classList.toggle("lc-tab-active", btn.dataset.livecodeViewBtn === view)
-      )
+      this.toolbar?.querySelectorAll("[data-livecode-view-btn]").forEach((btn) => {
+        const active = btn.dataset.livecodeViewBtn === view
+        btn.classList.toggle("lc-tab-active", active)
+        btn.setAttribute("aria-pressed", String(active))
+      })
       if (view !== "code") this.renderPreview()
     }
 
@@ -431,6 +447,11 @@ export const LiveCode = {
     } else if (this.currentPrefix && this.currentPrefix().length < 2) {
       this.hideCompletions?.()
     }
+  },
+
+  destroyed() {
+    clearTimeout(this.previewTimer)
+    this._caretMirror?.remove()
   }
 }
 

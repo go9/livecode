@@ -1,3 +1,4 @@
+# Build from the repository root: docker build -f demo/Dockerfile .
 # Find eligible builder and runner images on Docker Hub. We use Ubuntu/Debian
 # instead of Alpine to avoid DNS resolution issues in production.
 #
@@ -35,35 +36,40 @@ RUN mix local.hex --force \
 # set build ENV
 ENV MIX_ENV="prod"
 
-# install mix dependencies
-COPY mix.exs mix.lock ./
+# Copy LiveCode before resolving the demo's ../ path dependency.
+COPY mix.exs ./
+COPY lib lib
+COPY priv priv
+
+WORKDIR /app/demo
+COPY demo/mix.exs demo/mix.lock ./
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 
 # copy compile-time config files before we compile dependencies
 # to ensure any relevant config change will trigger the dependencies
 # to be re-compiled.
-COPY config/config.exs config/${MIX_ENV}.exs config/
+COPY demo/config/config.exs demo/config/${MIX_ENV}.exs config/
 RUN mix deps.compile
 
 RUN mix assets.setup
 
-COPY priv priv
+COPY demo/priv priv
 
-COPY lib lib
+COPY demo/lib lib
 
 # Compile the release
 RUN mix compile
 
-COPY assets assets
+COPY demo/assets assets
 
 # compile assets
 RUN mix assets.deploy
 
 # Changes to config/runtime.exs don't require recompiling the code
-COPY config/runtime.exs config/
+COPY demo/config/runtime.exs config/
 
-COPY rel rel
+COPY demo/rel rel
 RUN mix release
 
 # start a new build stage so that the final image will only contain
@@ -89,7 +95,7 @@ RUN chown nobody /app
 ENV MIX_ENV="prod"
 
 # Only copy the final release from the build stage
-COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/demo ./
+COPY --from=builder --chown=nobody:root /app/demo/_build/${MIX_ENV}/rel/demo ./
 
 USER nobody
 

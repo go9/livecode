@@ -2,7 +2,7 @@
    https://tailwindcss.com/docs/configuration */
 
 @import "tailwindcss" source(none);
-@import "../../deps/livecode/priv/static/livecode/livecode.css";
+@import "../../../priv/static/livecode/livecode.css";
 @source "../css";
 @source "../js";
 @source "../../lib/demo_web";
