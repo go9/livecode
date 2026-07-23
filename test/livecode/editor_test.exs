@@ -22,11 +22,27 @@ defmodule LiveCode.EditorTest do
     assert html =~ "lc-token-bracket"
     assert html =~ "lc-completion"
     assert html =~ "lc-diagnostic-error"
+    assert html =~ ~s(aria-invalid="true")
   end
 
   test "gutter carries the scroll-sync hook target" do
     html = render_component(&editor/1, id: "g", language: LiveCode.Languages.SQL, value: "a\nb")
     assert html =~ "data-livecode-gutter"
+  end
+
+  test "caller diagnostics remain distinguishable from client-refreshed diagnostics" do
+    html =
+      render_component(&editor/1,
+        id: "external-diagnostic",
+        language: LiveCode.Languages.JSON,
+        value: "{}",
+        diagnostics: [%LiveCode.Diagnostic{message: "Keep <this> warning", severity: :warning}]
+      )
+
+    assert html =~ "data-livecode-persistent-diagnostic"
+    assert html =~ "Keep &lt;this&gt; warning"
+    assert html =~ ~s(aria-describedby="external-diagnostic-diagnostics")
+    assert html =~ ~s(aria-live="polite")
   end
 
   test "a previewable language renders the Code/Preview/Split toolbar + preview pane" do
@@ -40,7 +56,9 @@ defmodule LiveCode.EditorTest do
     assert html =~ "lc-has-preview"
     assert html =~ "lc-view-code"
     assert html =~ "lc-toolbar"
+    assert html =~ ~s(role="group")
     assert html =~ ~s(data-livecode-view-btn="code")
+    assert html =~ ~s(aria-pressed="true")
     assert html =~ ~s(data-livecode-view-btn="split")
     assert html =~ ~s(data-livecode-view-btn="preview")
     assert html =~ "data-livecode-preview-pane"

@@ -65,6 +65,8 @@ defmodule LiveCode.Editor do
     language_context = %Context{text: assigns.value, metadata: assigns.context}
     preview = Language.preview(assigns.language, assigns.opts)
     view = initial_view(preview, assigns.preview)
+    language_diagnostics = Language.diagnostics(assigns.language, assigns.value, assigns.opts)
+    diagnostics = assigns.diagnostics ++ language_diagnostics
 
     assigns =
       assigns
@@ -73,10 +75,10 @@ defmodule LiveCode.Editor do
         :completions,
         Language.completions(assigns.language, language_context, assigns.opts)
       )
-      |> assign(
-        :diagnostics,
-        assigns.diagnostics ++ Language.diagnostics(assigns.language, assigns.value, assigns.opts)
-      )
+      |> assign(:external_diagnostics, assigns.diagnostics)
+      |> assign(:language_diagnostics, language_diagnostics)
+      |> assign(:has_diagnostics, diagnostics != [])
+      |> assign(:invalid?, Enum.any?(diagnostics, &(&1.severity == :error)))
       |> assign(:line_numbers, line_numbers(assigns.value))
       |> assign(:preview_config, preview)
       |> assign(:view, view)
@@ -84,7 +86,13 @@ defmodule LiveCode.Editor do
     ~H"""
     <div
       id={@id}
-      class={["lc-editor", @view && "lc-has-preview", @view && "lc-view-#{@view}", @class]}
+      class={[
+        "lc-editor",
+        @view && "lc-has-preview",
+        @view && "lc-view-#{@view}",
+        @invalid? && "lc-invalid",
+        @class
+      ]}
       phx-hook="LiveCode"
       phx-update="ignore"
       data-livecode-root
@@ -94,10 +102,31 @@ defmodule LiveCode.Editor do
       data-livecode-view={@view}
       data-livecode-transform={@transform}
     >
-      <div :if={@view} class="lc-toolbar" data-livecode-toolbar role="tablist" aria-label="Editor view">
-        <button type="button" class="lc-tab" data-livecode-view-btn="code">Code</button>
-        <button type="button" class="lc-tab" data-livecode-view-btn="split">Split</button>
-        <button type="button" class="lc-tab" data-livecode-view-btn="preview">{@preview_config.label}</button>
+      <div :if={@view} class="lc-toolbar" data-livecode-toolbar role="group" aria-label="Editor view">
+        <button
+          type="button"
+          class="lc-tab"
+          data-livecode-view-btn="code"
+          aria-pressed={to_string(@view == :code)}
+        >
+          Code
+        </button>
+        <button
+          type="button"
+          class="lc-tab"
+          data-livecode-view-btn="split"
+          aria-pressed={to_string(@view == :split)}
+        >
+          Split
+        </button>
+        <button
+          type="button"
+          class="lc-tab"
+          data-livecode-view-btn="preview"
+          aria-pressed={to_string(@view == :preview)}
+        >
+          {@preview_config.label}
+        </button>
       </div>
       <div class="lc-body">
         <div class="lc-shell">
@@ -116,6 +145,8 @@ defmodule LiveCode.Editor do
               autocomplete="off"
               autocapitalize="off"
               data-livecode-textarea
+              aria-invalid={to_string(@invalid?)}
+              aria-describedby={@has_diagnostics && "#{@id}-diagnostics"}
               phx-debounce="blur"
               {@rest}
             >{@value}</textarea>
@@ -135,8 +166,25 @@ defmodule LiveCode.Editor do
         </div>
         <div :if={@view} class="lc-preview" data-livecode-preview-pane aria-label="Preview"></div>
       </div>
-      <div class="lc-diagnostics" data-livecode-diagnostics hidden={@diagnostics == []}>
-        <div :for={diagnostic <- @diagnostics} class={["lc-diagnostic", "lc-diagnostic-#{diagnostic.severity}"]}>
+      <div
+        id={"#{@id}-diagnostics"}
+        class="lc-diagnostics"
+        data-livecode-diagnostics
+        aria-live="polite"
+        hidden={not @has_diagnostics}
+      >
+        <div
+          :for={diagnostic <- @external_diagnostics}
+          class={["lc-diagnostic", "lc-diagnostic-#{diagnostic.severity}"]}
+          data-livecode-persistent-diagnostic
+        >
+          <span class="lc-diagnostic-severity">{diagnostic.severity}</span>
+          <span>{diagnostic.message}</span>
+        </div>
+        <div
+          :for={diagnostic <- @language_diagnostics}
+          class={["lc-diagnostic", "lc-diagnostic-#{diagnostic.severity}"]}
+        >
           <span class="lc-diagnostic-severity">{diagnostic.severity}</span>
           <span>{diagnostic.message}</span>
         </div>
