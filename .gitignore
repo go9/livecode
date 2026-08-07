@@ -21,3 +21,6 @@ livecode-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# serena session state
+.serena/
