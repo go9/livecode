@@ -131,7 +131,7 @@ const PREVIEW_DEBOUNCE_MS = 120
 export const LiveCode = {
   mounted() {
     this.resolveRefs()
-    if (!this.textarea) return
+    if (!this.textarea && !this.previewPane) return
     this.activeCompletion = 0
     this.previewTimer = null
     const persistentDiagnostics = Array.from(
@@ -145,9 +145,12 @@ export const LiveCode = {
     this.items = () => Array.from(this.completions?.querySelectorAll("[data-livecode-insert]") || [])
     this.visibleItems = () => this.items().filter((item) => !item.hidden)
 
+    this.sourceText = () =>
+      this.textarea ? this.textarea.value : (this.el.dataset.livecodeValue || "")
+
     this.renderHighlight = () => {
       if (!this.highlightCode) return
-      const value = this.textarea.value
+      const value = this.sourceText()
       const highlighter = this.lang.highlight || ((text) => escape(text))
       let html = highlighter(value)
       // A textarea reserves a blank line for a trailing newline; a <pre>
@@ -162,7 +165,7 @@ export const LiveCode = {
 
     this.renderDiagnostics = () => {
       if (!this.diagnostics || !this.lang.diagnostics) return
-      const items = this.lang.diagnostics(this.textarea.value)
+      const items = this.lang.diagnostics(this.sourceText())
       const clientDiagnostics = items
         .map(
           (d) =>
@@ -307,7 +310,7 @@ export const LiveCode = {
       if (this._frame || !this.previewPane) return this._frame
       const frame = document.createElement("iframe")
       frame.className = "lc-preview-frame"
-      frame.setAttribute("title", "Preview")
+      frame.setAttribute("title", this.el.dataset.livecodePreviewLabel || "Preview")
       // Empty sandbox token = maximum isolation (no script execution, no
       // same-origin). The editor never needs the preview to run scripts.
       if (this.sandbox) frame.setAttribute("sandbox", "")
@@ -318,7 +321,7 @@ export const LiveCode = {
 
     this.renderPreview = () => {
       if (!this.previewMode || !this.previewPane || this.view === "code") return
-      let text = this.textarea.value
+      let text = this.sourceText()
       const transform = transforms[this.transformName]
       if (transform) {
         try {
@@ -353,54 +356,56 @@ export const LiveCode = {
     }
 
     // ── Listeners ───────────────────────────────────────────────────────
-    this.textarea.addEventListener("scroll", () => {
-      this.syncScroll()
-      if (!this.completions?.hidden) this.positionCompletions()
-    })
+    if (this.textarea) {
+      this.textarea.addEventListener("scroll", () => {
+        this.syncScroll()
+        if (!this.completions?.hidden) this.positionCompletions()
+      })
 
-    this.textarea.addEventListener("input", (event) => {
-      this.renderHighlight()
-      this.syncScroll()
-      this.schedulePreview()
+      this.textarea.addEventListener("input", (event) => {
+        this.renderHighlight()
+        this.syncScroll()
+        this.schedulePreview()
 
-      if (!this.completions?.hidden) this.positionCompletions()
-      if (event.isTrusted && this.currentPrefix().length >= 2) this.showCompletions(false)
-      else this.hideCompletions()
-    })
+        if (!this.completions?.hidden) this.positionCompletions()
+        if (event.isTrusted && this.currentPrefix().length >= 2) this.showCompletions(false)
+        else this.hideCompletions()
+      })
 
-    this.textarea.addEventListener("keydown", (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === " ") {
-        event.preventDefault()
-        this.showCompletions(true)
-        return
-      }
-
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-        this.pushEventTo(this.el, "livecode:submit", { value: this.textarea.value })
-        return
-      }
-
-      if (!this.completions?.hidden) {
-        if (event.key === "ArrowDown") {
+      this.textarea.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === " ") {
           event.preventDefault()
-          this.markActive(this.activeCompletion + 1)
+          this.showCompletions(true)
           return
         }
 
-        if (event.key === "ArrowUp") {
-          event.preventDefault()
-          this.markActive(this.activeCompletion - 1)
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          this.pushEventTo(this.el, "livecode:submit", { value: this.textarea.value })
           return
         }
 
-        if (event.key === "Enter" || event.key === "Tab") {
-          if (this.acceptActiveCompletion()) event.preventDefault()
-          return
-        }
-      }
+        if (!this.completions?.hidden) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault()
+            this.markActive(this.activeCompletion + 1)
+            return
+          }
 
-      if (event.key === "Escape") this.hideCompletions()
-    })
+          if (event.key === "ArrowUp") {
+            event.preventDefault()
+            this.markActive(this.activeCompletion - 1)
+            return
+          }
+
+          if (event.key === "Enter" || event.key === "Tab") {
+            if (this.acceptActiveCompletion()) event.preventDefault()
+            return
+          }
+        }
+
+        if (event.key === "Escape") this.hideCompletions()
+      })
+    }
 
     this.completions?.addEventListener("click", (event) => {
       const item = event.target.closest("[data-livecode-insert]")
