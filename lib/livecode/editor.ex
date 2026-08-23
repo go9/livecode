@@ -32,30 +32,77 @@ defmodule LiveCode.Editor do
   attr(:readonly, :boolean,
     default: false,
     doc:
-      "Render a static, syntax-highlighted, non-editable block (no textarea, hook, completions, or diagnostics) — for showing code."
+      "Render a static, syntax-highlighted, non-editable block (no textarea, completions, or diagnostics). Preview chrome still shows when the language implements preview/1."
   )
 
   attr(:rest, :global)
 
   @doc "Render a textarea-backed LiveCode editor."
   def editor(%{readonly: true} = assigns) do
+    preview = Language.preview(assigns.language, assigns.opts)
+    view = initial_view(preview, assigns.preview)
+
     assigns =
       assigns
       |> assign(:tokens, Language.tokenize(assigns.language, assigns.value, assigns.opts))
       |> assign(:line_numbers, line_numbers(assigns.value))
+      |> assign(:preview_config, preview)
+      |> assign(:view, view)
 
     ~H"""
     <div
       id={@id}
-      class={["lc-editor", "lc-readonly", @class]}
+      class={[
+        "lc-editor",
+        "lc-readonly",
+        @view && "lc-has-preview",
+        @view && "lc-view-#{@view}",
+        @class
+      ]}
+      phx-hook={@view && "LiveCode"}
+      phx-update={@view && "ignore"}
+      data-livecode-root={@view && true}
       data-livecode-language={language_name(@language)}
+      data-livecode-preview={@view && to_string(@preview_config.mode)}
+      data-livecode-preview-label={@view && @preview_config.label}
+      data-livecode-sandbox={@view && to_string(@preview_config.sandbox)}
+      data-livecode-view={@view}
+      data-livecode-value={@view && @value}
+      data-livecode-transform={@transform}
       {@rest}
     >
+      <div :if={@view} class="lc-toolbar" data-livecode-toolbar role="group" aria-label="Editor view">
+        <button
+          type="button"
+          class="lc-tab"
+          data-livecode-view-btn="code"
+          aria-pressed={to_string(@view == :code)}
+        >
+          Code
+        </button>
+        <button
+          type="button"
+          class="lc-tab"
+          data-livecode-view-btn="split"
+          aria-pressed={to_string(@view == :split)}
+        >
+          Split
+        </button>
+        <button
+          type="button"
+          class="lc-tab"
+          data-livecode-view-btn="preview"
+          aria-pressed={to_string(@view == :preview)}
+        >
+          {@preview_config.label}
+        </button>
+      </div>
       <div class="lc-body">
         <div class="lc-shell">
           <div class="lc-gutter" aria-hidden="true"><span :for={line <- @line_numbers}>{line}</span></div>
           <pre class="lc-highlight lc-highlight-static"><code><span :for={token <- @tokens} class={token_class(token.kind)}>{token.text}</span></code></pre>
         </div>
+        <div :if={@view} class="lc-preview" data-livecode-preview-pane aria-label="Preview"></div>
       </div>
     </div>
     """
@@ -98,6 +145,7 @@ defmodule LiveCode.Editor do
       data-livecode-root
       data-livecode-language={language_name(@language)}
       data-livecode-preview={@view && to_string(@preview_config.mode)}
+      data-livecode-preview-label={@view && @preview_config.label}
       data-livecode-sandbox={@view && to_string(@preview_config.sandbox)}
       data-livecode-view={@view}
       data-livecode-transform={@transform}

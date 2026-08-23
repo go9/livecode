@@ -92,6 +92,41 @@ defmodule LiveCode.EditorTest do
     refute html =~ "data-livecode-preview-pane"
   end
 
+  test "readonly previewable language still shows Code/Preview/Split chrome" do
+    html =
+      render_component(&editor/1,
+        id: "html-ro",
+        language: LiveCode.Languages.HTML,
+        value: "<h1>hi</h1>",
+        readonly: true,
+        preview: :preview
+      )
+
+    assert html =~ "lc-readonly"
+    assert html =~ "lc-has-preview"
+    assert html =~ "lc-toolbar"
+    assert html =~ ~s(data-livecode-view-btn="preview")
+    assert html =~ "data-livecode-preview-pane"
+    assert html =~ ~s(data-livecode-sandbox="true")
+    assert html =~ ~s(data-livecode-value="&lt;h1&gt;hi&lt;/h1&gt;")
+    refute html =~ "lc-textarea"
+  end
+
+  test "readonly non-previewable language stays highlight-only" do
+    html =
+      render_component(&editor/1,
+        id: "sql-ro",
+        language: LiveCode.Languages.SQL,
+        value: "select 1",
+        readonly: true
+      )
+
+    assert html =~ "lc-readonly"
+    refute html =~ "lc-toolbar"
+    refute html =~ "data-livecode-preview-pane"
+    refute html =~ "phx-hook"
+  end
+
   test "transform attr is wired to the root for consumer preview transforms" do
     html =
       render_component(&editor/1,
